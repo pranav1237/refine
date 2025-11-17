@@ -8,28 +8,83 @@ on:
 env:
   RELEASE_ONLY: ''
 
+permissions:
+  contents: write
+  packages: write
+
 jobs:
   release:
     name: Create Release
     runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.ref }}-stable-release
+      cancel-in-progress: true
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      # Example: bump version / compute tag (adjust to your repo's steps)
-      - name: Bump version
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: Create .npmrc (if publishing to npm)
+        if: secrets.NPM_TOKEN != ''
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Install Dependencies & Build
+        run: pnpm install
+
+      - name: Lint
+        if: ${{ env.RELEASE_ONLY != 'true' }}
+        run: pnpm lint:ci
+
+      - name: Syncpack
+        if: ${{ env.RELEASE_ONLY != 'true' }}
+        run: pnpm sp lint
+
+      - name: Publint
+        if: ${{ env.RELEASE_ONLY != 'true' }}
+        run: pnpm publint:all
+
+      - name: Are The Types Wrong
+        if: ${{ env.RELEASE_ONLY != 'true' }}
+        run: pnpm attw:all
+
+      - name: Test
+        if: ${{ env.RELEASE_ONLY != 'true' }}
+        run: pnpm test:all
+
+      - name: Determine tag from push
         id: bump
         run: |
-          # (your version bump logic here)
-          echo "::set-output name=new_tag::v1.2.3"
+          # When triggered by a tag push, GITHUB_REF is refs/tags/<tag>
+          # expose new_tag via GITHUB_OUTPUT for downstream steps
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            new_tag=${GITHUB_REF#refs/tags/}
+            echo "new_tag=${new_tag}" >> $GITHUB_OUTPUT
+          else
+            # fallback - set a placeholder (adjust if you compute tags differently)
+            echo "new_tag=unknown" >> $GITHUB_OUTPUT
+          fi
 
-      - name: Generate changelog
+      - name: Generate changelog (simple placeholder)
         id: changelog
         run: |
-          # (your changelog generation here)
-          echo "::set-output name=body::Release notes here"
+          # Replace with your real changelog generation logic (changesets, conventional-changelog, etc.)
+          echo "body=Release notes for ${{ steps.bump.outputs.new_tag }}" >> $GITHUB_OUTPUT
 
-      # Create GitHub release (actions/create-release expects token input)
       - name: Create GitHub Release
         uses: actions/create-release@v1
         with:
@@ -40,19 +95,17 @@ jobs:
           prerelease: false
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      # If you upload assets with softprops/action-gh-release, pass token too
-      - name: Upload release assets
+      - name: Upload release assets (optional)
         uses: softprops/action-gh-release@v1
         with:
           files: build/*.zip
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      # If you call a reusable workflow that requires `token` input:
-      # jobs:
-      #   release:
-      #     uses: owner/repo/.github/workflows/some-reusable.yml@main
-      #     with:
-      #       token: ${{ secrets.GITHUB_TOKEN }}
-
-      # Additional steps that need the token should also include:
-      # token: ${{ secrets.GITHUB_TOKEN }}
+      # Example: If you later enable changesets or a publish step, ensure those steps include needed secrets:
+      # - name: Publish packages (example)
+      #   uses: changesets/action@v1
+      #   with:
+      #     publish: pnpm -w publish --access public
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #     NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
