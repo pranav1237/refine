@@ -23,6 +23,11 @@ jobs:
       group: ${{ github.ref }}
       cancel-in-progress: true
 
+    # expose the secret as an env var so expressions can reference env (not secrets)
+    env:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      RELEASE_ONLY: ${{ env.RELEASE_ONLY }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -40,11 +45,10 @@ jobs:
           cache: 'pnpm'
 
       - name: Create .npmrc (optional)
-        if: ${{ secrets.NPM_TOKEN != '' }}
+        if: ${{ env.NPM_TOKEN != '' }}
         run: |
           echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        # env is already provided at job level, no need to re-declare
 
       - name: Install Dependencies & Build
         run: pnpm install
@@ -76,7 +80,6 @@ jobs:
             new_tag="${GITHUB_REF#refs/tags/}"
             echo "new_tag=${new_tag}" >> $GITHUB_OUTPUT
           else
-            # Not a tag push — fail early to avoid creating a bad release
             echo "No tag found in GITHUB_REF (${GITHUB_REF}). Exiting."
             exit 1
           fi
@@ -84,7 +87,6 @@ jobs:
       - name: Generate changelog (placeholder)
         id: changelog
         run: |
-          # Replace with your real changelog generation (changesets/conventional commits etc.)
           echo "body=Release notes for ${{ steps.bump.outputs.new_tag }}" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
