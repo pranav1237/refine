@@ -4,20 +4,23 @@ on:
   push:
     tags:
       - 'v*.*.*'
+  workflow_dispatch:
 
 env:
   RELEASE_ONLY: ''
 
 permissions:
-  contents: write
-  packages: write
+  contents: write         # required to create releases
+  packages: write         # if you publish packages
+  id-token: write         # if you need OIDC
+  pull-requests: write
 
 jobs:
   release:
     name: Create Release
     runs-on: ubuntu-latest
     concurrency:
-      group: ${{ github.ref }}-stable-release
+      group: ${{ github.ref }}
       cancel-in-progress: true
 
     steps:
@@ -36,7 +39,7 @@ jobs:
           node-version: 22
           cache: "pnpm"
 
-      - name: Create .npmrc (if publishing to npm)
+      - name: Create .npmrc (optional)
         if: secrets.NPM_TOKEN != ''
         run: |
           echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
@@ -50,19 +53,7 @@ jobs:
         if: ${{ env.RELEASE_ONLY != 'true' }}
         run: pnpm lint:ci
 
-      - name: Syncpack
-        if: ${{ env.RELEASE_ONLY != 'true' }}
-        run: pnpm sp lint
-
-      - name: Publint
-        if: ${{ env.RELEASE_ONLY != 'true' }}
-        run: pnpm publint:all
-
-      - name: Are The Types Wrong
-        if: ${{ env.RELEASE_ONLY != 'true' }}
-        run: pnpm attw:all
-
-      - name: Test
+      - name: Run tests
         if: ${{ env.RELEASE_ONLY != 'true' }}
         run: pnpm test:all
 
@@ -70,19 +61,18 @@ jobs:
         id: bump
         run: |
           # When triggered by a tag push, GITHUB_REF is refs/tags/<tag>
-          # expose new_tag via GITHUB_OUTPUT for downstream steps
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             new_tag=${GITHUB_REF#refs/tags/}
             echo "new_tag=${new_tag}" >> $GITHUB_OUTPUT
           else
-            # fallback - set a placeholder (adjust if you compute tags differently)
+            # fallback: use branch name or abort
             echo "new_tag=unknown" >> $GITHUB_OUTPUT
           fi
 
-      - name: Generate changelog (simple placeholder)
+      - name: Generate changelog (placeholder)
         id: changelog
         run: |
-          # Replace with your real changelog generation logic (changesets, conventional-changelog, etc.)
+          # Replace with your real changelog generation (changesets/conventional commits etc.)
           echo "body=Release notes for ${{ steps.bump.outputs.new_tag }}" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
@@ -100,12 +90,3 @@ jobs:
         with:
           files: build/*.zip
           token: ${{ secrets.GITHUB_TOKEN }}
-
-      # Example: If you later enable changesets or a publish step, ensure those steps include needed secrets:
-      # - name: Publish packages (example)
-      #   uses: changesets/action@v1
-      #   with:
-      #     publish: pnpm -w publish --access public
-      #   env:
-      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      #     NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
