@@ -10,9 +10,9 @@ env:
   RELEASE_ONLY: ''
 
 permissions:
-  contents: write         # required to create releases
-  packages: write         # if you publish packages
-  id-token: write         # if you need OIDC
+  contents: write
+  packages: write
+  id-token: write
   pull-requests: write
 
 jobs:
@@ -36,11 +36,11 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: "pnpm"
+          node-version: '22'
+          cache: 'pnpm'
 
       - name: Create .npmrc (optional)
-        if: secrets.NPM_TOKEN != ''
+        if: ${{ secrets.NPM_TOKEN != '' }}
         run: |
           echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
         env:
@@ -53,6 +53,18 @@ jobs:
         if: ${{ env.RELEASE_ONLY != 'true' }}
         run: pnpm lint:ci
 
+      - name: Syncpack
+        if: ${{ env.RELEASE_ONLY != 'true' }}
+        run: pnpm sp lint
+
+      - name: Publint
+        if: ${{ env.RELEASE_ONLY != 'true' }}
+        run: pnpm publint:all
+
+      - name: Are The Types Wrong
+        if: ${{ env.RELEASE_ONLY != 'true' }}
+        run: pnpm attw:all
+
       - name: Run tests
         if: ${{ env.RELEASE_ONLY != 'true' }}
         run: pnpm test:all
@@ -60,13 +72,13 @@ jobs:
       - name: Determine tag from push
         id: bump
         run: |
-          # When triggered by a tag push, GITHUB_REF is refs/tags/<tag>
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            new_tag=${GITHUB_REF#refs/tags/}
+            new_tag="${GITHUB_REF#refs/tags/}"
             echo "new_tag=${new_tag}" >> $GITHUB_OUTPUT
           else
-            # fallback: use branch name or abort
-            echo "new_tag=unknown" >> $GITHUB_OUTPUT
+            # Not a tag push — fail early to avoid creating a bad release
+            echo "No tag found in GITHUB_REF (${GITHUB_REF}). Exiting."
+            exit 1
           fi
 
       - name: Generate changelog (placeholder)
