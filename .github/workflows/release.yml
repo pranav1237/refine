@@ -20,13 +20,12 @@ jobs:
     name: Create Release
     runs-on: ubuntu-latest
     concurrency:
-      group: ${{ github.ref }}
+      group: ${{ github.ref }}-stable-release
       cancel-in-progress: true
 
-    # expose the secret as an env var so expressions can reference env (not secrets)
+    # Expose secrets as job env vars (do NOT reference env.* in job-level expressions)
     env:
       NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-      RELEASE_ONLY: ${{ env.RELEASE_ONLY }}
 
     steps:
       - name: Checkout
@@ -48,7 +47,6 @@ jobs:
         if: ${{ env.NPM_TOKEN != '' }}
         run: |
           echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
-        # env is already provided at job level, no need to re-declare
 
       - name: Install Dependencies & Build
         run: pnpm install
